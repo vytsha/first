@@ -1,0 +1,81 @@
+version: '2'
+
+services:
+  master:
+    image: bitnami/postgresql:14
+    container_name: master
+    ports:
+      - "5432:5432"
+    volumes: 
+      - db:/var/lib/postgresql/data
+      - ./sql/create_tables.sql:/docker-entrypoint-initdb.d/create_tables.sql
+      - ./sql/fill_tables.sql:/docker-entrypoint-initdb.d/fill_tables.sql    
+    environment:
+      - POSTGRESQL_REPLICATION_MODE=master
+      - POSTGRESQL_REPLICATION_USER=replicauser
+      - POSTGRESQL_REPLICATION_PASSWORD=replicaPassword
+      - POSTGRESQL_USERNAME=postgres
+      - POSTGRESQL_PASSWORD=Password
+      - POSTGRESQL_DATABASE=Database
+      - ALLOW_EMPTY_PASSWORD=yes
+    networks:
+      dockernet:
+        ipv4_address: 172.0.0.2
+
+  slave:
+    image: bitnami/postgresql:14
+    container_name: slave
+    ports:
+      - "5432:5432"
+    depends_on:
+      - master
+    environment:
+      - POSTGRESQL_REPLICATION_MODE=slave
+      - POSTGRESQL_REPLICATION_USER=replicauser
+      - POSTGRESQL_REPLICATION_PASSWORD=replicaPassword
+      - POSTGRESQL_MASTER_HOST=master
+      - POSTGRESQL_PASSWORD=Password
+      - POSTGRESQL_MASTER_PORT_NUMBER=5432
+      - ALLOW_EMPTY_PASSWORD=yes
+    networks:
+      dockernet:
+        ipv4_address: 172.0.0.3
+
+  prometheus:
+    container_name: prometheus
+    image: bitnami/prometheus:2.40.1
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      dockernet:
+        ipv4_address: 172.0.0.4
+
+  grafana:
+    container_name: grafana
+    image: grafana/grafana-oss:main-ubuntu
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_PATHS_CONFIG=/etc/grafana/custom.ini
+    volumes:
+      - ./config/grafana/custom.ini:/etc/grafana/custom.ini
+      - ./config/grafana/provisioning/:/etc/grafana/provisioning/
+      - type: bind
+        source: ./config/grafana/dashboard.json
+        target: /var/lib/grafana/dashboards/dashboard.json
+    links:
+      - prometheus
+    networks:
+      dockernet:
+        ipv4_address: 172.0.0.5
+
+networks:
+  dockernet:
+    driver: bridge
+    driver_opts:
+      com.docker.network.enable_ipv6: "false"
+    ipam:
+      config:
+        - subnet: 172.0.0.0/24
